@@ -1,11 +1,10 @@
 .PHONY: lint format test
 
-lint:
+lint: ## コードの静的解析を実行します
 	golangci-lint run ./...
 
-format:
-	go fmt ./...
-	go tool goimports -local github.com/nansystem/go-ddd -w .
+format: ## コードのフォーマットを整形します
+	golangci-lint fmt ./...
 
 test:
 	go test -race -cover ./...
