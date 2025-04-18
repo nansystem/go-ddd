@@ -1,0 +1,60 @@
+#!/bin/bash
+
+# コミット対象のファイルのみを取得
+STAGED_GO_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$')
+
+if [[ "$STAGED_GO_FILES" = "" ]]; then
+  exit 0
+fi
+
+PASS=true
+
+# フォーマットチェック
+echo "Running gofmt..."
+for FILE in $STAGED_GO_FILES
+do
+  # ファイルのフォーマットをチェック
+  gofmt -l -w "$FILE"
+  if [ $? -ne 0 ]; then
+    echo "gofmt failed on $FILE"
+    PASS=false
+  fi
+  # 変更をステージング
+  git add "$FILE"
+done
+
+# goimportsの実行
+echo "Running goimports..."
+for FILE in $STAGED_GO_FILES
+do
+  go tool goimports -local github.com/nansystem/go-ddd -w "$FILE"
+  if [ $? -ne 0 ]; then
+    echo "goimports failed on $FILE"
+    PASS=false
+  fi
+  # 変更をステージング
+  git add "$FILE"
+done
+
+# コミット対象のファイルだけをlintする
+echo "Running golangci-lint..."
+LINT_FILES=""
+for FILE in $STAGED_GO_FILES
+do
+  LINT_FILES="$LINT_FILES $FILE"
+done
+
+if [ -n "$LINT_FILES" ]; then
+  golangci-lint run $LINT_FILES
+  if [ $? -ne 0 ]; then
+    echo "golangci-lint failed"
+    PASS=false
+  fi
+fi
+
+if ! $PASS; then
+  echo "Linting or formatting failed, please fix the errors and try again"
+  exit 1
+fi
+
+exit 0
