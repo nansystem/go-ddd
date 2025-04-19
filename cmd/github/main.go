@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 
+	"github.com/Yamashou/gqlgenc/clientv2"
+
 	"github.com/nansystem/go-ddd/internal/config"
-	"github.com/nansystem/go-ddd/internal/infrastructure/github"
+	"github.com/nansystem/go-ddd/internal/infrastructure/github/gen"
 )
 
 func main() {
@@ -18,16 +21,24 @@ func main() {
 	}
 
 	// 設定を読み込む
-	cfg, err := config.LoadConfig()
+	_, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("設定の読み込みに失敗しました: %v", err)
 	}
 
 	// GitHubクライアントを初期化
-	githubClient, err := github.NewClient(cfg)
-	if err != nil {
-		log.Fatalf("GitHubクライアントの初期化に失敗しました: %v", err)
-	}
+	token := os.Getenv("GITHUB_TOKEN") // トークンは既に上でチェック済み
+
+	// Authorizationヘッダーを追加するためのインターセプターを作成
+	authInterceptor := clientv2.RequestInterceptor(func(ctx context.Context, req *http.Request, gqlInfo *clientv2.GQLRequestInfo, res interface{}, next clientv2.RequestInterceptorFunc) error {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+		return next(ctx, req, gqlInfo, res)
+	})
+
+	// clientv2.Options 構造体には AddHeader フィールドが存在しません。
+	// デフォルトのHTTPクライアントと標準のGitHub GraphQLエンドポイントを使用
+	// gen.NewClientはエラーを返さないため、エラーチェックは不要
+	githubClient := gen.NewClient(http.DefaultClient, "https://api.github.com/graphql", nil, authInterceptor)
 
 	// まずは自分のユーザー情報を取得
 	ctx := context.Background()
@@ -55,7 +66,12 @@ func main() {
 
 	// 結果を表示
 	fmt.Printf("Repository: %s/%s\n", owner, repo)
-	fmt.Printf("Description: %s\n", response.Repository.Description)
+	description := response.Repository.Description
+	if description == nil {
+		defaultDescription := "(説明なし)" // 説明が空の場合のデフォルトテキスト
+		description = &defaultDescription
+	}
+	fmt.Printf("Description: %s\n", *description)
 	fmt.Printf("Stars: %d\n", response.Repository.StargazerCount)
 	fmt.Printf("Forks: %d\n", response.Repository.ForkCount)
 	fmt.Printf("URL: %s\n", response.Repository.URL)

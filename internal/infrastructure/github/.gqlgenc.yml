@@ -1,0 +1,20 @@
+model:
+  filename: "./gen/models_gen.go"
+client:
+  filename: "./gen/client.go"
+models:
+  Int:
+    model: github.com/99designs/gqlgen/graphql.Int64
+  Date:
+    model: github.com/99designs/gqlgen/graphql.Time
+# schema:
+#   - "schema/**/*.graphql"
+endpoint:
+  url: https://api.github.com/graphql
+  headers:
+    Authorization: "Bearer ${GITHUB_TOKEN}"
+query:
+  - "query/**/*.graphql"
+generate:
+  clientInterfaceName: "GithubGraphQLClient"
+  structFieldsAlwaysPointers: true

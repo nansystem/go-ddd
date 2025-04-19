@@ -15,17 +15,21 @@
 
 ## クライアントコードの生成
 
-1. 設定ファイルは `internal/infrastructure/github/graphql/gqlgenc.yml` にあります
-2. GraphQLクエリは `internal/infrastructure/github/query/*.graphql` に定義されています
-3. 以下のコマンドでクライアントコードを生成します:
-
+1. 設定ファイルは `internal/infrastructure/github/generated/.gqlgenc.yml` にあります。
+   - この設定ファイルは、ローカルにダウンロードされたGitHub GraphQLスキーマを参照します。
+   - スキーマは以下のコマンドで取得・更新できます:
+     ```sh
+     curl -L -o internal/infrastructure/github/generated/schema/github_schema.graphql https://docs.github.com/public/schema.docs.graphql
+     ```
+2. GraphQLクエリは `internal/infrastructure/github/generated/query/*.graphql` に定義されています
+3. `internal/infrastructure/github/generated` ディレクトリに移動し、以下のコマンドでクライアントコードを生成します:
    ```sh
-   ./scripts/generate-github-client.sh
+   gqlgenc generate
    ```
 
    これにより以下のファイルが生成されます:
-   - `internal/infrastructure/github/graphql/model/models_gen.go`
-   - `internal/infrastructure/github/graphql/client/client_gen.go`
+   - `internal/infrastructure/github/generated/models_gen.go`
+   - `internal/infrastructure/github/generated/client.go`
 
 ## 使い方
 
@@ -44,9 +48,9 @@ go run cmd/github/main.go octocat hello-world
 
 ## 新しいクエリの追加方法
 
-1. `internal/infrastructure/github/query/` に新しい `.graphql` ファイルを追加
+1. `internal/infrastructure/github/generated/query/` に新しい `.graphql` ファイルを追加
 2. クエリを定義（GitHubのGraphQL APIドキュメントを参照）
-3. `./scripts/generate-github-client.sh` を実行してクライアントコードを生成
+3. `internal/infrastructure/github/generated` ディレクトリで `gqlgenc generate` を実行してクライアントコードを生成
 4. 生成されたクライアントを `github.GitHubClient` を通して利用
 
 ## GitHub GraphQL APIの詳細情報
