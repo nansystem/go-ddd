@@ -1,6 +1,8 @@
 version: "2"
 run:
-  modules-download-mode: readonly
+  # NOTE: fix ERRO [linters_context] typechecking error: named files must all be in one directory; have cmd/app and internal/presentation 
+  packages-separately: true # パッケージごとに並列実行
+  module-run-mode: readonly # モジュールを読み込み専用にする
   allow-parallel-runners: true
 linters:
   enable:

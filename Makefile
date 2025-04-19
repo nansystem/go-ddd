@@ -3,7 +3,7 @@
 lint: ## コードの静的解析を実行します
 	golangci-lint run ./...
 
-format: ## コードのフォーマットを整形します
+fmt: ## コードのフォーマットを整形します
 	golangci-lint fmt ./...
 
 test:

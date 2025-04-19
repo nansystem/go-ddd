@@ -9,43 +9,46 @@ fi
 
 PASS=true
 
-# フォーマットチェック
-echo "Running gofmt..."
+# フォーマットチェック & goimports の実行
+# gofmt と goimports をまとめて実行し、ステージングも1回にする
+echo "Running gofmt & goimports..."
+FORMATTED_FILES=""
 for FILE in $STAGED_GO_FILES
 do
-  # ファイルのフォーマットをチェック
+  # gofmt でフォーマットチェック (-l) と修正 (-w)
   gofmt -l -w "$FILE"
   if [ $? -ne 0 ]; then
     echo "gofmt failed on $FILE"
     PASS=false
   fi
-  # 変更をステージング
-  git add "$FILE"
-done
-
-# goimportsの実行
-echo "Running goimports..."
-for FILE in $STAGED_GO_FILES
-do
+  # goimports で import 文の整理とフォーマット修正 (-w)
+  # gofmt で既にフォーマットされている可能性もあるが、import 整理のために実行
   go tool goimports -local github.com/nansystem/go-ddd -w "$FILE"
   if [ $? -ne 0 ]; then
     echo "goimports failed on $FILE"
     PASS=false
   fi
-  # 変更をステージング
-  git add "$FILE"
+  # フォーマット/import修正されたファイルを記録
+  if git diff --quiet "$FILE"; then
+      : # ファイルに変更がない場合は何もしない
+  else
+      FORMATTED_FILES="$FORMATTED_FILES $FILE"
+  fi
 done
 
-# コミット対象のファイルだけをlintする
+# フォーマット/import修正されたファイルがあればステージング
+if [ -n "$FORMATTED_FILES" ]; then
+    echo "Adding formatted files to staging: $FORMATTED_FILES"
+    git add $FORMATTED_FILES
+fi
+
+
+# golangci-lint の実行
+# ステージされたファイルがある場合のみプロジェクト全体をlintする
+# 個別ファイル指定だとディレクトリ跨ぎでエラーになるため ./... を指定
 echo "Running golangci-lint..."
-LINT_FILES=""
-for FILE in $STAGED_GO_FILES
-do
-  LINT_FILES="$LINT_FILES $FILE"
-done
-
-if [ -n "$LINT_FILES" ]; then
-  golangci-lint run $LINT_FILES
+if [ -n "$STAGED_GO_FILES" ]; then
+  golangci-lint run ./...
   if [ $? -ne 0 ]; then
     echo "golangci-lint failed"
     PASS=false
