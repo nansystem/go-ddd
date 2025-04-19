@@ -4,6 +4,12 @@ import (
 	"github.com/nansystem/go-ddd/internal/domain/user"
 )
 
+type UserServiceInterface interface {
+	GetUsers() ([]*user.User, error)
+	GetUserByID(id string) (*user.User, error)
+	CreateUser(user *user.User) error
+}
+
 type UserService struct {
 	userRepository user.Repository
 }

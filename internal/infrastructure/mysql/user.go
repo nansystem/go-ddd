@@ -3,6 +3,9 @@ package mysql
 import (
 	"database/sql"
 
+	"github.com/go-sql-driver/mysql"
+
+	"github.com/nansystem/go-ddd/internal/domain/domainerror"
 	"github.com/nansystem/go-ddd/internal/domain/user"
 )
 
@@ -41,6 +44,9 @@ func (r *UserRepository) GetUserByID(id string) (*user.User, error) {
 	var name string
 	err := row.Scan(&id, &name)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, domainerror.ErrNotFound
+		}
 		return nil, err
 	}
 
@@ -49,5 +55,13 @@ func (r *UserRepository) GetUserByID(id string) (*user.User, error) {
 
 func (r *UserRepository) CreateUser(user *user.User) error {
 	_, err := r.db.Exec("INSERT INTO users (id, name) VALUES ($1, $2)", user.ID, user.Name)
-	return err
+	if err != nil {
+		if mysqlErr, ok := err.(*mysql.MySQLError); ok {
+			if mysqlErr.Number == 1062 {
+				return domainerror.NewDuplicateEntryError(user.ID, user.Name)
+			}
+		}
+		return err
+	}
+	return nil
 }

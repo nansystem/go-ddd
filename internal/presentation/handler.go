@@ -7,14 +7,15 @@ import (
 
 	"github.com/labstack/echo/v4"
 
+	"github.com/nansystem/go-ddd/internal/domain/user"
 	"github.com/nansystem/go-ddd/internal/usecase"
 )
 
 type UserHandler struct {
-	userService *usecase.UserService
+	userService usecase.UserServiceInterface
 }
 
-func NewUserHandler(userService *usecase.UserService) *UserHandler {
+func NewUserHandler(userService usecase.UserServiceInterface) *UserHandler {
 	return &UserHandler{userService: userService}
 }
 
@@ -28,10 +29,22 @@ func (h *UserHandler) GetUsers(c echo.Context) error {
 
 func (h *UserHandler) GetUserByID(c echo.Context) error {
 	id := c.Param("id")
-	return c.String(http.StatusOK, "GetUserByID response for ID: "+id)
+	user, err := h.userService.GetUserByID(id)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusOK, user)
 }
 
 func (h *UserHandler) CreateUser(c echo.Context) error {
+	user := new(user.User)
+	if err := c.Bind(user); err != nil {
+		return c.JSON(http.StatusBadRequest, err.Error())
+	}
+	err := h.userService.CreateUser(user)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, err.Error())
+	}
 	return c.String(http.StatusCreated, "CreateUser response")
 }
 
