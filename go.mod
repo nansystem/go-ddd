@@ -7,6 +7,8 @@ tool golang.org/x/tools/cmd/goimports
 require github.com/labstack/echo/v4 v4.13.3
 
 require (
+	filippo.io/edwards25519 v1.1.0 // indirect
+	github.com/go-sql-driver/mysql v1.9.2 // indirect
 	github.com/labstack/gommon v0.4.2 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect

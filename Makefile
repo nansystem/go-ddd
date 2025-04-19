@@ -1,9 +1,9 @@
 .PHONY: lint format test
 
-lint: ## コードの静的解析を実行します
+lint:
 	golangci-lint run ./...
 
-fmt: ## コードのフォーマットを整形します
+fmt:
 	golangci-lint fmt ./...
 
 test:
@@ -12,3 +12,11 @@ test:
 install-hooks:
 	cp scripts/git-hooks/pre-commit .git/hooks/pre-commit
 	chmod +x .git/hooks/pre-commit
+
+migrate-up:
+	docker exec -it go-ddd-mysql mysql -u ddduser -pdddpass -e "CREATE DATABASE IF NOT EXISTS go_ddd;"
+	docker exec -it go-ddd-mysql mysql -u ddduser -pdddpass -e "USE go_ddd; source /docker-entrypoint-initdb.d/01_schema.sql;"
+	docker exec -it go-ddd-mysql mysql -u ddduser -pdddpass -e "USE go_ddd; source /docker-entrypoint-initdb.d/02_testdata.sql;"
+
+migrate-down:
+	docker exec -it go-ddd-mysql mysql -u ddduser -pdddpass -e "DROP DATABASE IF EXISTS go_ddd;"
