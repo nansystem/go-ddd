@@ -1,0 +1,37 @@
+query GetRepository($owner: String!, $name: String!) {
+  viewer {
+    login
+  }
+  repository(owner: $owner, name: $name) {
+    id
+    name
+    url
+    description
+    stargazerCount
+    forkCount
+    issues(first: 10, states: OPEN) {
+      totalCount
+      nodes {
+        id
+        title
+        url
+        createdAt
+        author {
+          login
+        }
+      }
+    }
+    pullRequests(first: 10, states: OPEN) {
+      totalCount
+      nodes {
+        id
+        title
+        url
+        createdAt
+        author {
+          login
+        }
+      }
+    }
+  }
+}

@@ -20,3 +20,6 @@ migrate-up:
 
 migrate-down:
 	docker exec -it go-ddd-mysql mysql -u ddduser -pdddpass -e "DROP DATABASE IF EXISTS go_ddd;"
+
+generate-github-client:
+	./scripts/generate-github-client.sh

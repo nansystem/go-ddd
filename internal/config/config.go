@@ -9,6 +9,7 @@ import (
 
 type Config struct {
 	DBConfig mysql.DBConfig
+	GitHub   GitHubConfig
 }
 
 var once sync.Once
@@ -26,6 +27,7 @@ func LoadConfig() (*Config, error) {
 	}
 
 	config.DBConfig = *dbConfig
+	config.GitHub = loadGitHubConfig()
 
 	return config, nil
 }
@@ -48,4 +50,15 @@ func getEnv(key, defaultValue string) string {
 		return defaultValue
 	}
 	return value
+}
+
+// GitHubConfig GitHub設定
+type GitHubConfig struct {
+	Token string
+}
+
+func loadGitHubConfig() GitHubConfig {
+	return GitHubConfig{
+		Token: getEnv("GITHUB_TOKEN", ""),
+	}
 }

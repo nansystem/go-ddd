@@ -1,0 +1,11 @@
+# Simple configuration for GitHub GraphQL API
+schema:
+  - schema.graphql
+model:
+  package: model
+  filename: ./model/models_gen.go
+client:
+  package: client
+  filename: ./client/client_gen.go
+query:
+  - "./query/repository.graphql"
