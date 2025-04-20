@@ -1,5 +1,3 @@
-// エンドポイント固有のハンドラー
-// コントローラーの役割
 package presentation
 
 import (
@@ -22,7 +20,7 @@ func NewUserHandler(userService usecase.UserServiceInterface) *UserHandler {
 func (h *UserHandler) GetUsers(c echo.Context) error {
 	users, err := h.userService.GetUsers()
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, err.Error())
+		return err // エラーをそのまま返す
 	}
 	return c.JSON(http.StatusOK, users)
 }
@@ -31,21 +29,41 @@ func (h *UserHandler) GetUserByID(c echo.Context) error {
 	id := c.Param("id")
 	user, err := h.userService.GetUserByID(id)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, err.Error())
+		return err // エラーをそのまま返す
 	}
 	return c.JSON(http.StatusOK, user)
 }
 
 func (h *UserHandler) CreateUser(c echo.Context) error {
-	user := new(user.User)
-	if err := c.Bind(user); err != nil {
-		return c.JSON(http.StatusBadRequest, err.Error())
+	// リクエストボディのバインディングはハンドラで行うのが一般的
+	reqUser := new(struct { // DTOを定義する方が望ましい場合もある
+		ID    string `json:"id"` // Create時はIDは不要か、自動生成するべき
+		Name  string `json:"name"`
+		Email string `json:"email"` // UserドメインモデルにEmailがなければ不要
+	})
+	if err := c.Bind(reqUser); err != nil {
+		// バインドエラーはBadRequestとしてミドルウェアに処理させるか、
+		// ここで具体的なエラーを返す（ただし、ミドルウェアの思想とは少しずれる）
+		// return echo.NewHTTPError(http.StatusBadRequest, "Invalid request body: "+err.Error())
+		return err // シンプルにミドルウェアに任せる
 	}
-	err := h.userService.CreateUser(user)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, err.Error())
+
+	// ドメインモデルに変換 (Emailはドメインモデルに合わせて調整)
+	domainUser := &user.User{
+		ID:   reqUser.ID, // IDの扱いは要検討
+		Name: reqUser.Name,
+		// Email: reqUser.Email, // 必要なら追加
 	}
-	return c.String(http.StatusCreated, "CreateUser response")
+
+	if err := h.userService.CreateUser(domainUser); err != nil {
+		return err // エラーをそのまま返す
+	}
+
+	// 成功レスポンス (message フィールドを追加)
+	return c.JSON(http.StatusCreated, map[string]string{
+		"id":      domainUser.ID,
+		"message": "ユーザーが作成されました",
+	})
 }
 
 func (h *UserHandler) SetupUserRoutes(g *echo.Group) {

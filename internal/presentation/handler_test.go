@@ -1,11 +1,10 @@
 package presentation_test
 
 import (
-	"encoding/json"
+	"bytes" // JSONEqのために必要
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/labstack/echo/v4"
@@ -14,67 +13,75 @@ import (
 	"github.com/nansystem/go-ddd/internal/domain/domainerror"
 	"github.com/nansystem/go-ddd/internal/domain/user"
 	"github.com/nansystem/go-ddd/internal/presentation"
+	"github.com/nansystem/go-ddd/internal/presentation/middleware" // エラーミドルウェアをインポート
 	"github.com/nansystem/go-ddd/internal/usecase"
 )
 
+// --- テストヘルパー: Echoインスタンスとミドルウェア、ルートを設定 ---
+func setupTestRouter(handler *presentation.UserHandler) *echo.Echo {
+	e := echo.New()
+	// エラーハンドリングミドルウェアを登録
+	e.Use(middleware.ErrorHandlerMiddleware())
+
+	// テスト対象のハンドラが処理するルートを登録
+	g := e.Group("/users") // UserHandlerのSetupUserRoutesに合わせる
+	handler.SetupUserRoutes(g)
+
+	return e
+}
+
 func TestGetUsers(t *testing.T) {
-	// テストケース
 	tests := []struct {
 		name           string
-		setupMock      func(mock *usecase.MockUserService)
+		setupMock      func(mockService *usecase.MockUserService)
 		expectedStatus int
-		expectedBody   string
+		expectedBody   string // 期待するJSON文字列
 	}{
 		{
-			name: "ユーザー一覧の取得に成功",
+			name: "成功: ユーザー一覧を取得",
 			setupMock: func(mockService *usecase.MockUserService) {
 				users := []*user.User{
 					{ID: "1", Name: "テストユーザー1"},
 					{ID: "2", Name: "テストユーザー2"},
 				}
-				mockService.On("GetUsers").Return(users, nil)
+				mockService.On("GetUsers").Return(users, nil).Once()
 			},
 			expectedStatus: http.StatusOK,
 			expectedBody:   `[{"ID":"1","Name":"テストユーザー1"},{"ID":"2","Name":"テストユーザー2"}]`,
 		},
 		{
-			name: "エラーが発生した場合",
+			name: "失敗: ユースケースでエラー発生",
 			setupMock: func(mockService *usecase.MockUserService) {
-				mockService.On("GetUsers").Return(nil, errors.New("データベースエラー"))
+				// 内部エラーをシミュレート (DBエラーなど)
+				mockService.On("GetUsers").Return(nil, errors.New("予期せぬ内部エラー")).Once()
 			},
-			expectedStatus: http.StatusInternalServerError,
-			expectedBody:   `"データベースエラー"`,
+			expectedStatus: http.StatusInternalServerError, // ミドルウェアが500を返す
+			expectedBody:   `{"error":"internal_server_error","message":"内部エラーが発生しました"}`,
+		},
+		{
+			name: "成功: ユーザーが0件の場合",
+			setupMock: func(mockService *usecase.MockUserService) {
+				users := []*user.User{} // 空のスライス
+				mockService.On("GetUsers").Return(users, nil).Once()
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   `[]`, // 空のJSON配列
 		},
 	}
 
-	// テストケースを実行
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Echo インスタンスとリクエストを設定
-			e := echo.New()
-			req := httptest.NewRequest(http.MethodGet, "/users", nil)
-			rec := httptest.NewRecorder()
-			c := e.NewContext(req, rec)
-
-			// モックサービスを設定
 			mockService := new(usecase.MockUserService)
 			tt.setupMock(mockService)
-
-			// ハンドラーを作成してテスト
 			handler := presentation.NewUserHandler(mockService)
-			err := handler.GetUsers(c)
+			e := setupTestRouter(handler)
 
-			// アサーション
-			assert.NoError(t, err)
+			req := httptest.NewRequest(http.MethodGet, "/users", nil)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+
 			assert.Equal(t, tt.expectedStatus, rec.Code)
-
-			// JSONレスポンスを整形して比較（スペースや改行の違いを無視）
-			var expected, actual interface{}
-			_ = json.Unmarshal([]byte(tt.expectedBody), &expected)
-			_ = json.Unmarshal(rec.Body.Bytes(), &actual)
-			assert.Equal(t, expected, actual)
-
-			// モックの呼び出しを検証
+			assert.JSONEq(t, tt.expectedBody, rec.Body.String())
 			mockService.AssertExpectations(t)
 		})
 	}
@@ -84,65 +91,139 @@ func TestGetUserByID(t *testing.T) {
 	tests := []struct {
 		name           string
 		userID         string
-		setupMock      func(mock *usecase.MockUserService, id string)
+		setupMock      func(mockService *usecase.MockUserService, id string)
 		expectedStatus int
 		expectedBody   string
 	}{
 		{
-			name:   "存在するユーザーのIDを指定",
+			name:   "成功: 存在するユーザーID",
 			userID: "1",
 			setupMock: func(mockService *usecase.MockUserService, id string) {
-				user := &user.User{ID: id, Name: "テストユーザー"}
-				mockService.On("GetUserByID", id).Return(user, nil)
+				user := &user.User{ID: id, Name: "テストユーザー1"}
+				mockService.On("GetUserByID", id).Return(user, nil).Once()
 			},
 			expectedStatus: http.StatusOK,
-			expectedBody:   `{"ID":"1","Name":"テストユーザー"}`,
+			expectedBody:   `{"ID":"1","Name":"テストユーザー1"}`,
 		},
 		{
-			name:   "存在しないユーザーのIDを指定",
-			userID: "999",
+			name:   "失敗: 存在しないユーザーID",
+			userID: "notfound",
 			setupMock: func(mockService *usecase.MockUserService, id string) {
-				mockService.On("GetUserByID", id).Return(nil, domainerror.ErrNotFound)
+				notFoundErr := domainerror.NewNotFoundError("User", id)
+				mockService.On("GetUserByID", id).Return(nil, notFoundErr).Once()
 			},
-			expectedStatus: http.StatusInternalServerError, // エラー時は500を返すように修正
-			expectedBody:   `"ユーザーが見つかりません"`,               // domainerror.ErrNotFound のメッセージ
+			expectedStatus: http.StatusNotFound, // ミドルウェアが404を返す
+			expectedBody:   `{"error":"not_found","message":"User (ID: notfound) エンティティが見つかりません"}`,
 		},
 		{
-			name:   "GetUserByIDで予期せぬエラーが発生",
-			userID: "err",
+			name:   "失敗: ユースケースで内部エラー発生",
+			userID: "internalerror",
 			setupMock: func(mockService *usecase.MockUserService, id string) {
-				mockService.On("GetUserByID", id).Return(nil, errors.New("予期せぬDBエラー"))
+				mockService.On("GetUserByID", id).Return(nil, errors.New("内部エラー発生")).Once()
 			},
-			expectedStatus: http.StatusInternalServerError,
-			expectedBody:   `"予期せぬDBエラー"`,
+			expectedStatus: http.StatusInternalServerError, // ミドルウェアが500を返す
+			expectedBody:   `{"error":"internal_server_error","message":"内部エラーが発生しました"}`,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Echo インスタンスとリクエストを設定
-			e := echo.New()
-			// パスパラメータを含むリクエストURLを正しく設定
-			req := httptest.NewRequest(http.MethodGet, "/users/"+tt.userID, nil)
-			rec := httptest.NewRecorder()
-			c := e.NewContext(req, rec)
-			c.SetParamNames("id")
-			c.SetParamValues(tt.userID)
-
-			// モックサービスを設定
 			mockService := new(usecase.MockUserService)
 			tt.setupMock(mockService, tt.userID)
-
-			// ハンドラーを作成してテスト
 			handler := presentation.NewUserHandler(mockService)
-			err := handler.GetUserByID(c)
+			e := setupTestRouter(handler)
 
-			// アサーション
-			assert.NoError(t, err)
+			targetURL := "/users/" + tt.userID
+			req := httptest.NewRequest(http.MethodGet, targetURL, nil)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+
 			assert.Equal(t, tt.expectedStatus, rec.Code)
+			assert.JSONEq(t, tt.expectedBody, rec.Body.String())
+			mockService.AssertExpectations(t)
+		})
+	}
+}
 
-			// レスポンスボディを確認
-			assert.Equal(t, tt.expectedBody, strings.TrimSpace(rec.Body.String()))
+func TestCreateUser(t *testing.T) {
+	tests := []struct {
+		name           string
+		requestBody    string
+		setupMock      func(mockService *usecase.MockUserService)
+		expectedStatus int
+		expectedBody   string
+	}{
+		{
+			name:        "成功: ユーザーを作成",
+			requestBody: `{"id":"newid","name":"新規ユーザー"}`,
+			setupMock: func(mockService *usecase.MockUserService) {
+				// CreateUserに渡されるであろうUserオブジェクトを期待値として設定
+				expectedUser := &user.User{ID: "newid", Name: "新規ユーザー"}
+				mockService.On("CreateUser", expectedUser).Return(nil).Once()
+			},
+			expectedStatus: http.StatusCreated,
+			expectedBody:   `{"id":"newid","message":"ユーザーが作成されました"}`, // handlerの実装に合わせる
+		},
+		{
+			name:        "失敗: 不正なリクエストボディ (JSON)",
+			requestBody: `{"id":"bad", "name":}`, // 不正なJSON
+			setupMock: func(_ *usecase.MockUserService) {
+				// Bindエラーなので、Usecaseは呼ばれない
+			},
+			expectedStatus: http.StatusBadRequest, // EchoのデフォルトのBindエラーは400
+			// Echoのデフォルトエラーレスポンスか、ミドルウェアのレスポンスを期待
+			// ここではミドルウェアが echo.ErrBadRequest を捕捉することを期待
+			expectedBody: `{"error":"bad_request","message":"不正なリクエストです"}`,
+		},
+		{
+			name:        "失敗: バリデーションエラー (Usecase)",
+			requestBody: `{"id":"validid","name":""}`, // Nameが空
+			setupMock: func(mockService *usecase.MockUserService) {
+				invalidUser := &user.User{ID: "validid", Name: ""}
+				validationErr := domainerror.NewValidationError("Name", "名前は必須です")
+				mockService.On("CreateUser", invalidUser).Return(validationErr).Once()
+			},
+			expectedStatus: http.StatusBadRequest, // ミドルウェアが400を返す
+			expectedBody:   `{"error":"invalid_input","message":"Field Name: 名前は必須です"}`,
+		},
+		{
+			name:        "失敗: 重複エラー (Usecase)",
+			requestBody: `{"id":"duplicateid","name":"重複ユーザー"}`,
+			setupMock: func(mockService *usecase.MockUserService) {
+				duplicateUser := &user.User{ID: "duplicateid", Name: "重複ユーザー"}
+				duplicateErr := domainerror.NewDuplicateEntryError("duplicateid", "重複ユーザー")
+				mockService.On("CreateUser", duplicateUser).Return(duplicateErr).Once()
+			},
+			expectedStatus: http.StatusConflict,                                                          // ミドルウェアが409を返す
+			expectedBody:   `{"error":"duplicate_entry","message":"重複エラー: ID=duplicateid, Name=重複ユーザー"}`, // メッセージ調整
+		},
+		{
+			name:        "失敗: その他の内部エラー (Usecase)",
+			requestBody: `{"id":"internal","name":"内部エラー"}`,
+			setupMock: func(mockService *usecase.MockUserService) {
+				internalUser := &user.User{ID: "internal", Name: "内部エラー"}
+				mockService.On("CreateUser", internalUser).Return(errors.New("予期せぬDBエラー")).Once()
+			},
+			expectedStatus: http.StatusInternalServerError, // ミドルウェアが500を返す
+			expectedBody:   `{"error":"internal_server_error","message":"内部エラーが発生しました"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := new(usecase.MockUserService)
+			tt.setupMock(mockService)
+			handler := presentation.NewUserHandler(mockService)
+			e := setupTestRouter(handler)
+
+			req := httptest.NewRequest(http.MethodPost, "/users", bytes.NewBufferString(tt.requestBody))
+			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON) // Content-Typeを設定
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+
+			assert.Equal(t, tt.expectedStatus, rec.Code)
+			assert.JSONEq(t, tt.expectedBody, rec.Body.String())
+			mockService.AssertExpectations(t)
 		})
 	}
 }

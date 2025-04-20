@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
@@ -36,6 +37,7 @@ func ErrorHandlerMiddleware() echo.MiddlewareFunc {
 			var notFoundErr *domainerror.NotFoundError
 			var duplicateErr *domainerror.DuplicateEntryError
 			var validationErr *domainerror.ValidationError
+			var httpErr *echo.HTTPError
 
 			// エラータイプに基づいてレスポンスを構築
 			switch {
@@ -71,20 +73,33 @@ func ErrorHandlerMiddleware() echo.MiddlewareFunc {
 				// ログにエラー詳細を記録（本番環境ではクライアントに詳細を返さない）
 				c.Logger().Error(err)
 
-			case errors.Is(err, echo.ErrNotFound):
-				statusCode = http.StatusNotFound
-				response.Error = "not_found"
-				response.Message = "リソースが見つかりません"
+			case errors.As(err, &httpErr):
+				statusCode = httpErr.Code
+				if httpErr.Message != nil {
+					if msgStr, ok := httpErr.Message.(string); ok {
+						response.Message = msgStr
+					} else if msgErr, ok := httpErr.Message.(error); ok {
+						response.Message = msgErr.Error()
+					} else {
+						response.Message = fmt.Sprintf("%v", httpErr.Message)
+					}
+				} else {
+					response.Message = http.StatusText(statusCode)
+				}
 
-			case errors.Is(err, echo.ErrMethodNotAllowed):
-				statusCode = http.StatusMethodNotAllowed
-				response.Error = "method_not_allowed"
-				response.Message = "許可されていないメソッドです"
-
-			case errors.Is(err, echo.ErrBadRequest):
-				statusCode = http.StatusBadRequest
-				response.Error = "bad_request"
-				response.Message = "不正なリクエストです"
+				switch statusCode {
+				case http.StatusBadRequest:
+					response.Error = "bad_request"
+					response.Message = "不正なリクエストです"
+				case http.StatusNotFound:
+					response.Error = "not_found"
+					response.Message = "リソースが見つかりません"
+				case http.StatusMethodNotAllowed:
+					response.Error = "method_not_allowed"
+					response.Message = "許可されていないメソッドです"
+				default:
+					response.Error = "http_error"
+				}
 
 			default:
 				// その他のエラー
@@ -102,7 +117,10 @@ func ErrorHandlerMiddleware() echo.MiddlewareFunc {
 			}
 
 			// JSONレスポンスを返す
-			return c.JSON(statusCode, response)
+			if !c.Response().Committed {
+				return c.JSON(statusCode, response)
+			}
+			return nil
 		}
 	}
 }
